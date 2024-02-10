@@ -45,12 +45,12 @@ func NewApp(events []Event, autocomplete []string, search ...string) *App {
 		EnableMouse(true)
 
 	// дополнительные настройки внешнего вида
-	filter.SetBorderPadding(0, 0, 1, 1)
 	text.SetBorder(true).
 		SetBorderAttributes(tcell.AttrDim)
 	list.SetTitle("Events").
 		SetBorder(true).
 		SetBorderAttributes(tcell.AttrDim)
+	filter.SetBorderPadding(0, 0, 1, 1)
 
 	// инициализируем данные приложения
 	application := &App{
@@ -130,11 +130,16 @@ func (a *App) autoComplete(currentText string) (entries []string) {
 		}
 	}
 
-	if len(entries) <= 1 {
-		return nil
+	return entries
+}
+
+func (a *App) setAutocompletedFunc(text string, _, source int) bool {
+	if source != tview.AutocompletedNavigate {
+		a.filter.SetText(text)
 	}
 
-	return entries
+	return source == tview.AutocompletedEnter ||
+		source == tview.AutocompletedClick
 }
 
 func (a *App) filterDone(_ tcell.Key) {
@@ -148,13 +153,4 @@ func (a *App) setInputCapture(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	return event
-}
-
-func (a *App) setAutocompletedFunc(text string, _, source int) bool {
-	if source != tview.AutocompletedNavigate {
-		a.filter.SetText(text)
-	}
-
-	return source == tview.AutocompletedEnter ||
-		source == tview.AutocompletedClick
 }

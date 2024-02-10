@@ -42,7 +42,7 @@ func run() error {
 	// формируем список названий заголовков для подстановки
 	autocomplete := make([]string, 0, len(headers))
 	for k := range headers {
-		autocomplete = append(autocomplete, k+":")
+		autocomplete = append(autocomplete, k+": ")
 	}
 	slices.Sort(autocomplete)
 
