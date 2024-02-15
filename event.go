@@ -102,7 +102,7 @@ func (e *Event) Contains(key string) bool {
 func (e *Event) Format(w io.Writer, key string) error {
 	buf := bufio.NewWriter(w)
 
-	const clearLine = "[-:-:-\n"
+	const clearLine = "[-:-:-]\n"
 
 	// вспомогательная функция для выделения цветом найденного
 	filter := []byte(key)
