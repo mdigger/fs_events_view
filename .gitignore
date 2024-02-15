@@ -1,3 +1,4 @@
 .DS_Store
 .vscode
+*.zip
 fs_events_view
