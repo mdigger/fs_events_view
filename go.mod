@@ -3,11 +3,12 @@ module github.com/mdigger/fs_events_view
 go 1.21
 
 require (
+	code.rocketnine.space/tslocum/cview v1.5.9
 	github.com/gdamore/tcell/v2 v2.7.0
-	github.com/rivo/tview v0.0.0-20240204151237-861aa94d61c8
 )
 
 require (
+	code.rocketnine.space/tslocum/cbind v0.1.5 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
