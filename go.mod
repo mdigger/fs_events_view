@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	code.rocketnine.space/tslocum/cview v1.5.9
-	github.com/gdamore/tcell/v2 v2.7.0
+	github.com/gdamore/tcell/v2 v2.7.1
 )
 
 require (
