@@ -80,14 +80,15 @@ func NewApp(events []Event, autocomplete []string, search ...string) *App {
 // Запускаем приложение.
 func (a *App) Run() error {
 	a.fillList() // заполняем список событий
+
 	return a.app.Run()
 }
 
 func (a *App) fillList() {
 	filter := a.filter.GetText() // текст для фильтрации
-
 	// очищаем и заполняем список событий
 	a.list.Clear()
+
 	for _, event := range a.events {
 		if filter == "" || event.Contains(filter) {
 			item := cview.NewListItem(event.Name)
@@ -109,10 +110,12 @@ func (a *App) fillList() {
 
 func (a *App) listItemSelected(_ int, item *cview.ListItem) {
 	a.text.Clear()
+
 	event, ok := item.GetReference().(Event)
 	if !ok {
 		panic("invalid event type")
 	}
+
 	if err := event.Format(a.text, a.filter.GetText()); err != nil {
 		panic(err)
 	}
@@ -123,10 +126,12 @@ func (a *App) listItemSelected(_ int, item *cview.ListItem) {
 	a.text.ScrollToBeginning()
 }
 
-func (a *App) autoComplete(currentText string) (entries []*cview.ListItem) {
+func (a *App) autoComplete(currentText string) []*cview.ListItem {
 	if currentText == "" {
 		return nil
 	}
+
+	var entries []*cview.ListItem
 
 	for _, word := range a.autocomplete {
 		if strings.HasPrefix(word, currentText) {

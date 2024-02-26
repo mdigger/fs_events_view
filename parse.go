@@ -18,13 +18,16 @@ func Parse(filename string) ([]Event, error) {
 
 	// подсчитываем количество записей в файле и сбрасываем позицию чтения на начало
 	var lineCount int
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lineCount++
 	}
+
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, err
 	}
@@ -33,6 +36,8 @@ func Parse(filename string) ([]Event, error) {
 }
 
 // словарь для подсказок названий ключей в заголовке событий.
+//
+//nolint:gochecknoglobals
 var headers map[string]struct{}
 
 func decode(r io.Reader, length int) ([]Event, error) {
@@ -41,10 +46,11 @@ func decode(r io.Reader, length int) ([]Event, error) {
 	headers = make(map[string]struct{})
 	// разбираем события из файле
 	dec := json.NewDecoder(r)
+
 	for {
 		// декодируем описание события
-		ev := make(map[string]string)
-		if err := dec.Decode(&ev); err != nil {
+		event := make(map[string]string)
+		if err := dec.Decode(&event); err != nil {
 			if errors.Is(err, io.EOF) {
 				break // больше событий нет
 			}
@@ -53,15 +59,16 @@ func decode(r io.Reader, length int) ([]Event, error) {
 		}
 
 		// добавляем событие в общий список
-		events = append(events, NewEvent(ev))
+		events = append(events, NewEvent(event))
 
 		// запоминаем названия заголовков событий
-		for k := range ev {
-			if _, ok := ignoreHeaders[k]; ok || k == "Content-Length" {
+		for key := range event {
+			if _, ok := ignoreHeaders[key]; ok || key == "Content-Length" {
 				continue
 			}
-			if _, ok := headers[k]; !ok {
-				headers[k] = struct{}{}
+
+			if _, ok := headers[key]; !ok {
+				headers[key] = struct{}{}
 			}
 		}
 	}

@@ -44,6 +44,7 @@ func run() error {
 	for k := range headers {
 		autocomplete = append(autocomplete, k+": ")
 	}
+
 	slices.Sort(autocomplete)
 
 	// запускаем приложение

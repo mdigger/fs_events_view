@@ -20,39 +20,40 @@ type Event struct {
 	Body      string
 }
 
-func NewEvent(ev map[string]string) Event {
+func NewEvent(event map[string]string) Event {
 	// имя события (для CUSTOM используется имя подкласса)
-	name, ok := ev["Event-Subclass"]
+	name, ok := event["Event-Subclass"]
 	if !ok {
-		name = ev["Event-Name"]
+		name = event["Event-Name"]
 	}
 
 	// порядковый номер события
-	//nolint:errcheck // return 0 on error
-	sequence, _ := strconv.ParseInt(ev["Event-Sequence"], 10, 64)
+	sequence, _ := strconv.ParseInt(event["Event-Sequence"], 10, 64)
 
 	// время создания события
-	var ts time.Time
-	if i, err := strconv.ParseInt(ev["Event-Date-Timestamp"], 10, 64); err == nil {
-		ts = time.UnixMicro(i)
+	var timestamp time.Time
+	if i, err := strconv.ParseInt(event["Event-Date-Timestamp"], 10, 64); err == nil {
+		timestamp = time.UnixMicro(i)
 	}
 
 	// по договоренности тело сообщения в JSON передается с таким именем
-	body, ok := ev["_body"]
+	body, ok := event["_body"]
 	if ok {
-		delete(ev, "_body")
+		delete(event, "_body")
 	}
 
 	// сортируем порядок следования заголовков
-	keys := make([]string, 0, len(ev))
-	for k := range ev {
+	keys := make([]string, 0, len(event))
+
+	for key := range event {
 		// игнорируем часто используемые дополнительные заголовки
-		if _, ok := ignoreHeaders[k]; ok || k == "Content-Length" {
+		if _, ok := ignoreHeaders[key]; ok || key == "Content-Length" {
 			continue
 		}
 
-		keys = append(keys, k)
+		keys = append(keys, key)
 	}
+
 	slices.Sort(keys)
 
 	// формируем строку с заголовком события
@@ -61,9 +62,9 @@ func NewEvent(ev map[string]string) Event {
 	for _, k := range keys {
 		w.WriteString(k)
 		w.WriteString(": ")
-		// FIXME: удаляем пробелы и новые строки в начале и конце строки
+		// удаляем пробелы и новые строки в начале и конце строки
 		// значения заголовка — часто встречается для строк с переносами
-		val := strings.TrimSpace(ev[k])
+		val := strings.TrimSpace(event[k])
 		replaceNewLine.WriteString(&w, val)
 		w.WriteByte('\n')
 	}
@@ -71,14 +72,16 @@ func NewEvent(ev map[string]string) Event {
 	return Event{
 		Name:      name,
 		Sequence:  sequence,
-		Timestamp: ts,
+		Timestamp: timestamp,
 		Header:    w.String(),
 		Body:      body,
 	}
 }
 
+//nolint:gochecknoglobals // используется много раз после инициализации без изменений
 var replaceNewLine = strings.NewReplacer("\n", "\n\t")
 
+//nolint:gochecknoglobals // предопределенные заголовки для игнорирования
 var ignoreHeaders = map[string]struct{}{
 	"Core-UUID":                 {},
 	"Event-Calling-File":        {},
@@ -142,6 +145,7 @@ func (e *Event) Format(w io.Writer, key string) error {
 		if len(line) > 0 && line[0] == '\t' {
 			buf.Write(line)
 			buf.WriteByte('\n')
+
 			continue
 		}
 
@@ -151,11 +155,13 @@ func (e *Event) Format(w io.Writer, key string) error {
 		buf.WriteString("[dimgray]") // spellchecker:ignore dimgray
 		buf.Write(key)
 		buf.WriteByte(':')
+
 		if reNumbers.Match(value) {
 			buf.WriteString("[navy]") // цифровое значение
 		} else {
 			buf.WriteString("[-]") // не цифровое значение
 		}
+
 		buf.WriteByte(' ')
 		buf.Write(value)
 		buf.WriteString(clearLine) // сбрасываем форматирование
@@ -175,7 +181,7 @@ func (e *Event) Format(w io.Writer, key string) error {
 		}
 	}
 
-	return buf.Flush()
+	return buf.Flush() //nolint:wrapcheck
 }
 
 var reNumbers = regexp.MustCompile(`^\s*\d+\.*\d*\s*$`)
