@@ -29,7 +29,6 @@ func NewApp(events []Event, autocomplete []string, search ...string) *App {
 	list := cview.NewList()
 	list.ShowSecondaryText(false)
 	list.SetHighlightFullLine(true)
-	list.SetSelectedAlwaysVisible(true)
 	list.SetTitle("Events")
 	list.SetBorder(true)
 	list.SetBorderAttributes(tcell.AttrDim)
