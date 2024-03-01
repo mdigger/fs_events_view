@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"strings"
 )
@@ -22,12 +21,6 @@ func run() error {
 	allHeaders := flag.Bool("all-headers", false, "show all event headers")
 	hideEventsStr := flag.String("hide-events", "", "comma-separated list of event names to hide")
 	search := flag.String("search", "", "search regexp string")
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(),
-			"Usage\n  %s: [options] [search-filter]\n", os.Args[0])
-		flag.PrintDefaults()
-		os.Exit(0)
-	}
 	flag.Parse()
 
 	// если нужно показать все заголовки
