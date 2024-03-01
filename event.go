@@ -3,12 +3,16 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"code.rocketnine.space/tslocum/cview"
+	"github.com/gdamore/tcell/v2"
 )
 
 // Event represents an ESL event with headers and a body.
@@ -96,36 +100,46 @@ var ignoreHeaders = map[string]struct{}{
 	"FreeSWITCH-Version":        {},
 }
 
-// Contains возвращает true, если ключ содержится в заголовке или теле события.
-func (e *Event) Contains(key string) bool {
-	return strings.Contains(e.Header, key) ||
-		strings.Contains(e.Body, key)
+func (e *Event) ContainsRE(key *regexp.Regexp) bool {
+	return key.MatchString(e.Header) ||
+		key.MatchString(e.Body)
 }
 
-func (e *Event) Format(w io.Writer, key string) error {
+func color(c tcell.Color) string {
+	return fmt.Sprintf("[%s]", c.TrueColor().String())
+}
+
+var (
+	selected    = color(cview.Styles.SecondaryTextColor)
+	headerTitle = color(cview.Styles.ContrastSecondaryTextColor)
+	numbers     = color(cview.Styles.TertiaryTextColor)
+
+	reNumbers = regexp.MustCompile(`^\s*\d+\.*\d*\s*$`)
+)
+
+const clearLine = "[-:-:-]"
+
+func (e *Event) FormatRE(w io.Writer, key *regexp.Regexp) error {
 	buf := bufio.NewWriter(w)
 
-	const clearLine = "[-:-:-]\n"
-
 	// вспомогательная функция для выделения цветом найденного
-	filter := []byte(key)
 	//nolint:errcheck // writing to buffer
 	filterFormat := func(line []byte) bool {
-		if key == "" {
+		if key == nil {
 			return false
 		}
 
-		before, after, ok := bytes.Cut(line, filter)
-		if !ok {
+		loc := key.FindIndex(line)
+		if len(loc) != 2 {
 			return false
 		}
 
-		buf.WriteString("[yellow]")
-		buf.Write(before)
+		buf.WriteString(selected)
+		buf.Write(line[:loc[0]])
 		buf.WriteString("[::rb]")
-		buf.Write(filter)
+		buf.Write(line[loc[0]:loc[1]])
 		buf.WriteString("[::-]")
-		buf.Write(after)
+		buf.Write(line[loc[1]:])
 		buf.WriteString(clearLine) // сбрасываем форматирование
 
 		return true
@@ -133,9 +147,16 @@ func (e *Event) Format(w io.Writer, key string) error {
 
 	// заголовок события
 	scanner := bufio.NewScanner(strings.NewReader(e.Header))
+	firstLine := true
 	//nolint:errcheck // writing to buffer
 	for scanner.Scan() {
 		line := scanner.Bytes()
+
+		if firstLine {
+			firstLine = false
+		} else {
+			buf.WriteByte('\n')
+		}
 
 		if filterFormat(line) {
 			continue // строка уже отформатирована
@@ -144,7 +165,7 @@ func (e *Event) Format(w io.Writer, key string) error {
 		// игнорируем форматирование для строк с отступом
 		if len(line) > 0 && line[0] == '\t' {
 			buf.Write(line)
-			buf.WriteByte('\n')
+			// buf.WriteByte('\n')
 
 			continue
 		}
@@ -152,12 +173,12 @@ func (e *Event) Format(w io.Writer, key string) error {
 		// разделяем цветом ключ заголовка и значение
 		key, value, _ := bytes.Cut(line, []byte(": "))
 
-		buf.WriteString("[dimgray]") // spellchecker:ignore dimgray
+		buf.WriteString(headerTitle)
 		buf.Write(key)
 		buf.WriteByte(':')
 
 		if reNumbers.Match(value) {
-			buf.WriteString("[navy]") // цифровое значение
+			buf.WriteString(numbers) // цифровое значение
 		} else {
 			buf.WriteString("[-]") // не цифровое значение
 		}
@@ -171,7 +192,9 @@ func (e *Event) Format(w io.Writer, key string) error {
 	//nolint:errcheck // writing to buffer
 	if e.Body != "" {
 		// добавляем заголовок с размером тела события
-		buf.WriteString("[dimgray]Content-Length:[navy]")
+		buf.WriteString(headerTitle)
+		buf.WriteString("Content-Length:")
+		buf.WriteString(numbers)
 		buf.WriteString(strconv.Itoa(len(e.Body)))
 		buf.WriteString(clearLine) // сбрасываем форматирование
 
@@ -183,5 +206,3 @@ func (e *Event) Format(w io.Writer, key string) error {
 
 	return buf.Flush() //nolint:wrapcheck
 }
-
-var reNumbers = regexp.MustCompile(`^\s*\d+\.*\d*\s*$`)

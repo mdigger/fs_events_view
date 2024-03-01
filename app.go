@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"strings"
+	"regexp"
+	"regexp/syntax"
 	"time"
 
 	"code.rocketnine.space/tslocum/cview"
@@ -10,20 +12,29 @@ import (
 )
 
 type App struct {
-	events       []Event
-	autocomplete []string
-	filter       *cview.InputField
-	list         *cview.List
-	text         *cview.TextView
-	app          *cview.Application
+	events []Event
+	hide   map[string]struct{}
+	re     *regexp.Regexp
+	filter *cview.InputField
+	list   *cview.List
+	text   *cview.TextView
+	app    *cview.Application
 }
 
-func NewApp(events []Event, autocomplete []string, search ...string) *App {
+func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
+	cview.Styles.TitleColor = tcell.ColorLightSlateGray.TrueColor()
+	cview.Styles.BorderColor = tcell.ColorSlateGray.TrueColor()
+	cview.Styles.BorderColor = tcell.ColorDarkSlateGray.TrueColor()
+	cview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault.TrueColor()
+
 	// фильтр для поиска
-	filter := cview.NewInputField()
-	filter.SetLabel("[::u]F[::-]ilter: ")     // spell-checker:disable-line
-	filter.SetText(strings.Join(search, " ")) // сразу подставляем поисковый запрос
-	filter.SetPadding(0, 0, 1, 1)
+	search := cview.NewInputField()
+	search.SetLabel("[::u]F[::-]ind: ") // spell-checker:disable-line
+	search.SetPlaceholder("regexp search filter...")
+	search.SetText(searchFilter) // сразу подставляем поисковый запрос
+	search.SetFieldNoteTextColor(cview.Styles.ContrastSecondaryTextColor)
+	// search.SetFieldWidth(26)
+	// search.SetPadding(0, 0, 1, 1)
 
 	// список событий
 	list := cview.NewList()
@@ -31,47 +42,62 @@ func NewApp(events []Event, autocomplete []string, search ...string) *App {
 	list.SetHighlightFullLine(true)
 	list.SetTitle("Events")
 	list.SetBorder(true)
-	list.SetBorderAttributes(tcell.AttrDim)
+	list.SetSelectedBackgroundColor(cview.Styles.MoreContrastBackgroundColor.TrueColor())
 
 	// описание события
 	text := cview.NewTextView()
 	text.SetDynamicColors(true)
 	text.SetBorder(true)
-	text.SetBorderAttributes(tcell.AttrDim)
+	// text.SetWrap(false)
 
 	// разделение списка событий и описания
-	split := cview.NewFlex()
-	split.AddItem(list, 32, 0, true)
-	split.AddItem(text, 0, 1, false)
+	mainSplit := cview.NewFlex()
+	mainSplit.AddItem(list, 32, 0, true)
+	mainSplit.AddItem(text, 0, 1, false)
 
 	// структура окна приложения
 	flex := cview.NewFlex()
 	flex.SetDirection(cview.FlexRow)
-	flex.AddItem(split, 0, 1, true)
-	flex.AddItem(filter, 1, 0, false)
+	// flex.AddItem(header, 1, 0, false)
+	flex.AddItem(mainSplit, 0, 1, true)
+	flex.AddItem(search, 2, 0, false)
+
+	frame := cview.NewFrame(flex)
+	frame.SetBorders(0, 0, 0, 0, 0, 0)
+	frame.AddText("[::d]-=[::-] [::b]ESL Events Viewer[::-] [::d]=-",
+		true, cview.AlignCenter, cview.Styles.PrimaryTextColor)
+	if version != "" {
+		frame.AddText(fmt.Sprintf("[::d]v%s", version),
+			true, cview.AlignRight, cview.Styles.TertiaryTextColor)
+	}
 
 	// основное окно приложения
 	app := cview.NewApplication()
-	app.SetRoot(flex, true)
+	app.SetRoot(frame, true)
 	app.EnableMouse(true)
 
 	// дополнительные настройки внешнего вида
 
+	// список названий событий для скрытия
+	hideEventsMap := make(map[string]struct{}, len(hideEvents))
+	for _, name := range hideEvents {
+		hideEventsMap[name] = struct{}{}
+	}
+
 	// инициализируем данные приложения
 	application := &App{
-		events:       events,
-		autocomplete: autocomplete,
-		filter:       filter,
-		list:         list,
-		text:         text,
-		app:          app,
+		events: events,
+		hide:   hideEventsMap,
+		filter: search,
+		list:   list,
+		text:   text,
+		app:    app,
 	}
 
 	list.SetChangedFunc(application.listItemSelected)
 	list.SetSelectedFunc(application.listItemSelected)
 	list.SetDoneFunc(application.listItemDone)
-	filter.SetDoneFunc(application.filterDone)
-	filter.SetAutocompleteFunc(application.autoComplete)
+	search.SetDoneFunc(application.filterDone)
 	app.SetInputCapture(application.setInputCapture)
 
 	return application
@@ -79,29 +105,61 @@ func NewApp(events []Event, autocomplete []string, search ...string) *App {
 
 // Запускаем приложение.
 func (a *App) Run() error {
+	defer a.app.HandlePanic()
 	a.fillList() // заполняем список событий
 
 	return a.app.Run()
 }
 
 func (a *App) fillList() {
-	filter := a.filter.GetText() // текст для фильтрации
+	a.filter.ResetFieldNote()
+
+	if reStr := a.filter.GetText(); reStr != "" {
+		var err error
+		a.re, err = regexp.Compile(`(?mi)` + reStr)
+		if err != nil {
+			msg := err.Error()
+			var reError *syntax.Error
+			if errors.As(err, &reError) {
+				msg = reError.Code.String()
+			}
+
+			a.filter.SetFieldNote(msg)
+		}
+	} else {
+		a.re = nil
+	}
+
 	// очищаем и заполняем список событий
 	a.list.Clear()
+	a.text.Clear()
+	a.text.SetTitle("")
 
 	for _, event := range a.events {
-		if filter == "" || event.Contains(filter) {
+		// пропускаем события, которые должны быть скрыты
+		if _, ok := a.hide[event.Name]; ok {
+			continue
+		}
+
+		// пропускаем события, которые не содержат текст для поиска, если он определен
+		if a.re == nil || event.ContainsRE(a.re) {
 			item := cview.NewListItem(event.Name)
 			item.SetReference(event)
+
 			a.list.AddItem(item)
 		}
 	}
 
+	// for i, item := range a.list.GetItems() {
+	// 	_, ok := a.hide[item.GetMainText()]
+	// 	a.list.SetItemEnabled(i, !ok)
+	// }
+
 	// задаём заголовок списка событий
 	if c := a.list.GetItemCount(); c < len(a.events) {
-		a.list.SetTitle(fmt.Sprintf("[::d]Filtered:[::-] %d/%d", c, len(a.events)))
+		a.list.SetTitle(fmt.Sprintf("Filtered: [::d]%d/%d", c, len(a.events)))
 	} else {
-		a.list.SetTitle(fmt.Sprintf("[::d]Total:[::-] %d", c))
+		a.list.SetTitle(fmt.Sprintf("Total: [::d]%d", c))
 	}
 
 	a.list.SetOffset(0, 0) // всегда поле обновления переходим к началу
@@ -116,31 +174,15 @@ func (a *App) listItemSelected(_ int, item *cview.ListItem) {
 		panic("invalid event type")
 	}
 
-	if err := event.Format(a.text, a.filter.GetText()); err != nil {
+	if err := event.FormatRE(a.text, a.re); err != nil {
 		panic(err)
 	}
+
+	a.text.ScrollToBeginning()
 
 	title := fmt.Sprintf("%s [::d]#%d [%s]",
 		event.Name, event.Sequence, event.Timestamp.Format(time.TimeOnly))
 	a.text.SetTitle(title)
-	a.text.ScrollToBeginning()
-}
-
-func (a *App) autoComplete(currentText string) []*cview.ListItem {
-	if currentText == "" {
-		return nil
-	}
-
-	var entries []*cview.ListItem
-
-	for _, word := range a.autocomplete {
-		if strings.HasPrefix(word, currentText) {
-			item := cview.NewListItem(word)
-			entries = append(entries, item)
-		}
-	}
-
-	return entries
 }
 
 func (a *App) filterDone(_ tcell.Key) {

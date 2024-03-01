@@ -1,6 +1,6 @@
 module github.com/mdigger/fs_events_view
 
-go 1.21
+go 1.22
 
 require (
 	code.rocketnine.space/tslocum/cview v1.5.9
