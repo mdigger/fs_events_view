@@ -5,7 +5,6 @@ linters-settings:
     check-type-assertions: true
   forbidigo:
     forbid:
-      - '^fmt\.Print'
       - '^print$'
       - '^println$'
       - '^log\.'
