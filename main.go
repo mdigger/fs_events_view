@@ -34,12 +34,6 @@ func run() error {
 		return err
 	}
 
-	// разбираем список событий для фильтрации
-	hideEvents := make([]string, 0, strings.Count(*hideEventsStr, ","))
-	for _, name := range strings.Split(*hideEventsStr, ",") {
-		hideEvents = append(hideEvents, strings.TrimSpace(name))
-	}
-
 	// запускаем приложение
-	return NewApp(events, *search, hideEvents...).Run()
+	return NewApp(events, *search, strings.Split(*hideEventsStr, ",")...).Run()
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"regexp/syntax"
+	"strings"
 	"time"
 
 	"code.rocketnine.space/tslocum/cview"
@@ -22,19 +23,18 @@ type App struct {
 }
 
 func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
+	// переопределяем цветовую палитру по умолчанию
+	cview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault.TrueColor()
 	cview.Styles.TitleColor = tcell.ColorLightSlateGray.TrueColor()
 	cview.Styles.BorderColor = tcell.ColorSlateGray.TrueColor()
-	cview.Styles.BorderColor = tcell.ColorDarkSlateGray.TrueColor()
-	cview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault.TrueColor()
 
 	// фильтр для поиска
 	search := cview.NewInputField()
 	search.SetLabel("[::u]F[::-]ind: ") // spell-checker:disable-line
+	search.SetText(searchFilter)        // сразу подставляем поисковый запрос
 	search.SetPlaceholder("regexp search filter...")
-	search.SetText(searchFilter) // сразу подставляем поисковый запрос
-	search.SetFieldNoteTextColor(cview.Styles.ContrastSecondaryTextColor)
-	// search.SetFieldWidth(26)
-	// search.SetPadding(0, 0, 1, 1)
+	search.SetFieldNoteTextColor(
+		cview.Styles.ContrastSecondaryTextColor)
 
 	// список событий
 	list := cview.NewList()
@@ -42,13 +42,15 @@ func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
 	list.SetHighlightFullLine(true)
 	list.SetTitle("Events")
 	list.SetBorder(true)
-	list.SetSelectedBackgroundColor(cview.Styles.MoreContrastBackgroundColor.TrueColor())
+	list.SetSelectedBackgroundColor(
+		cview.Styles.MoreContrastBackgroundColor.TrueColor())
+	list.SetSelectedTextColor(
+		cview.Styles.PrimaryTextColor.TrueColor())
 
 	// описание события
 	text := cview.NewTextView()
 	text.SetDynamicColors(true)
 	text.SetBorder(true)
-	// text.SetWrap(false)
 
 	// разделение списка событий и описания
 	mainSplit := cview.NewFlex()
@@ -58,7 +60,6 @@ func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
 	// структура окна приложения
 	flex := cview.NewFlex()
 	flex.SetDirection(cview.FlexRow)
-	// flex.AddItem(header, 1, 0, false)
 	flex.AddItem(mainSplit, 0, 1, true)
 	flex.AddItem(search, 2, 0, false)
 
@@ -67,27 +68,34 @@ func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
 	frame.AddText("[::d]-=[::-] [::b]ESL Events Viewer[::-] [::d]=-",
 		true, cview.AlignCenter, cview.Styles.PrimaryTextColor)
 	if version != "" {
-		frame.AddText(fmt.Sprintf("[::d]v%s", version),
+		frame.AddText("[::d]v"+version,
 			true, cview.AlignRight, cview.Styles.TertiaryTextColor)
 	}
+	frame.AddText(
+		"[::r]^C[::-] exit [::d]|[::-] "+
+			"[::r]^H[::-] hide event [::d]|[::-] "+
+			"[::r]^R[::-] restore all [::d]|[::-] "+
+			"[::r]^F[::-] search",
+		false, cview.AlignCenter, cview.Styles.TertiaryTextColor)
 
 	// основное окно приложения
 	app := cview.NewApplication()
 	app.SetRoot(frame, true)
 	app.EnableMouse(true)
 
-	// дополнительные настройки внешнего вида
-
 	// список названий событий для скрытия
 	hideEventsMap := make(map[string]struct{}, len(hideEvents))
 	for _, name := range hideEvents {
-		hideEventsMap[name] = struct{}{}
+		if name = strings.TrimSpace(name); name != "" {
+			hideEventsMap[name] = struct{}{}
+		}
 	}
 
 	// инициализируем данные приложения
 	application := &App{
 		events: events,
 		hide:   hideEventsMap,
+		re:     nil,
 		filter: search,
 		list:   list,
 		text:   text,
@@ -100,6 +108,19 @@ func NewApp(events []Event, searchFilter string, hideEvents ...string) *App {
 	search.SetDoneFunc(application.filterDone)
 	app.SetInputCapture(application.setInputCapture)
 
+	list.AddContextItem("[::u]H[::-]ide event", 'h', application.hideEvent) // spell-checker:disable-line
+	list.AddContextItem("", 0, nil)
+	list.AddContextItem("[::u]R[::-]estore all event", 'r', application.listReset) // spell-checker:disable-line
+
+	contextMenu := list.ContextMenu.ContextMenuList()
+	contextMenu.SetHighlightFullLine(true)
+	contextMenu.SetSelectedBackgroundColor(
+		cview.Styles.MoreContrastBackgroundColor.TrueColor())
+	contextMenu.SetSelectedTextColor(
+		cview.Styles.PrimaryTextColor.TrueColor())
+	contextMenu.SetBorderColorFocused( // разделитель рисуется цветом основного текста
+		cview.Styles.PrimaryTextColor.TrueColor())
+
 	return application
 }
 
@@ -108,7 +129,32 @@ func (a *App) Run() error {
 	defer a.app.HandlePanic()
 	a.fillList() // заполняем список событий
 
-	return a.app.Run()
+	err := a.app.Run()
+
+	// формируем команду запуска приложения с текущими параметрами
+	var cmd strings.Builder
+	if search := strings.TrimSpace(a.filter.GetText()); search != "" {
+		cmd.WriteString(" -search=")
+		cmd.WriteString(search)
+	}
+	if len(a.hide) > 0 {
+		names := make([]string, 0, len(a.hide))
+		for name := range a.hide {
+			names = append(names, name)
+		}
+
+		cmd.WriteString(" -hide-events=\"")
+		cmd.WriteString(strings.Join(names, ","))
+		cmd.WriteByte('"')
+	}
+	if len(ignoreHeaders) == 0 {
+		cmd.WriteString(" -all-headers")
+	}
+	if cmd.Len() > 0 {
+		fmt.Printf("params:%s\n", cmd.String())
+	}
+
+	return err
 }
 
 func (a *App) fillList() {
@@ -150,11 +196,6 @@ func (a *App) fillList() {
 		}
 	}
 
-	// for i, item := range a.list.GetItems() {
-	// 	_, ok := a.hide[item.GetMainText()]
-	// 	a.list.SetItemEnabled(i, !ok)
-	// }
-
 	// задаём заголовок списка событий
 	if c := a.list.GetItemCount(); c < len(a.events) {
 		a.list.SetTitle(fmt.Sprintf("Filtered: [::d]%d/%d", c, len(a.events)))
@@ -195,10 +236,28 @@ func (a *App) listItemDone() {
 }
 
 func (a *App) setInputCapture(event *tcell.EventKey) *tcell.EventKey {
-	if event.Key() == tcell.KeyCtrlF {
-		a.app.SetFocus(a.filter) // переключаемся на поле фильтра
-		return nil
+	switch event.Key() {
+	case tcell.KeyCtrlF: // переключаемся на поле фильтра
+		a.app.SetFocus(a.filter)
+	case tcell.KeyCtrlH: // скрываем событие из списка
+		a.hideEvent(a.list.GetCurrentItemIndex())
+	case tcell.KeyCtrlA: // восстанавливаем все события в списке
+		a.listReset(0)
+	default:
+		return event
 	}
 
-	return event
+	return nil
+}
+
+func (a *App) hideEvent(index int) {
+	if item := a.list.GetItem(index); item != nil {
+		a.hide[item.GetMainText()] = struct{}{}
+		a.fillList()
+	}
+}
+
+func (a *App) listReset(_ int) {
+	a.hide = make(map[string]struct{})
+	a.fillList()
 }
