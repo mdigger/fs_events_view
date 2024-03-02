@@ -109,6 +109,7 @@ func color(c tcell.Color) string {
 	return fmt.Sprintf("[%s]", c.TrueColor().String())
 }
 
+//nolint:gochecknoglobals // предопределенные цвета
 var (
 	selected    = color(cview.Styles.SecondaryTextColor)
 	headerTitle = color(cview.Styles.ContrastSecondaryTextColor)
