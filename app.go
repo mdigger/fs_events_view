@@ -241,7 +241,7 @@ func (a *App) setInputCapture(event *tcell.EventKey) *tcell.EventKey {
 		a.app.SetFocus(a.filter)
 	case tcell.KeyCtrlH: // скрываем событие из списка
 		a.hideEvent(a.list.GetCurrentItemIndex())
-	case tcell.KeyCtrlA: // восстанавливаем все события в списке
+	case tcell.KeyCtrlR: // восстанавливаем все события в списке
 		a.listReset(0)
 	default:
 		return event
